@@ -1,26 +1,30 @@
 FROM maven:3.9-eclipse-temurin-17
 
-# Install dependencies for Chrome
+# Install dependencies for Chrome and ChromeDriver
 RUN apt-get update && apt-get install -y wget gnupg ca-certificates unzip --no-install-recommends \
     && wget -q -O /tmp/google-chrome.gpg https://dl-ssl.google.com/linux/linux_signing_key.pub \
     && gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg /tmp/google-chrome.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update && apt-get install -y google-chrome-stable --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+    # Install ChromeDriver - THIS WAS MISSING!
+    && CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') \
+    && CHROME_DRIVER_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}") \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_DRIVER_VERSION}/linux64/chromedriver-linux64.zip" -P /tmp/ \
+    && unzip /tmp/chromedriver-linux64.zip -d /tmp/ \
+    && mv /tmp/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
 
 WORKDIR /app
 
-# Copy only the java-tests folder to reduce context
+# Copy only the java-tests folder
 COPY java-tests /app
 
-# Download dependencies during build to speed up test runs
+# Download dependencies during build
 RUN mvn dependency:go-offline -B
 
 # Set Maven options
 ENV MAVEN_OPTS="-Dorg.slf4j.simpleLogger.showDateTime=true"
 
-# Create test-results directory
-RUN mkdir -p /app/test-results
-
 # Run tests when container starts
-CMD mvn test -DbaseUrl=${BASE_URL:-http://16.171.224.162} && cp -r target/surefire-reports/* /app/test-results/ || (cp -r target/surefire-reports/* /app/test-results/ 2>/dev/null; exit 0)
+CMD mvn test -DbaseUrl=${BASE_URL:-http://16.171.224.162}
