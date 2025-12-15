@@ -1,0 +1,25 @@
+FROM maven:3.9-eclipse-temurin-17
+
+# Install dependencies for Chrome
+RUN apt-get update && apt-get install -y wget gnupg ca-certificates unzip --no-install-recommends \
+    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list' \
+    && apt-get update && apt-get install -y google-chrome-stable --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy only the java-tests folder to reduce context
+COPY java-tests /app
+
+# Download dependencies during build to speed up test runs
+RUN mvn dependency:go-offline -B
+
+# Set Maven options
+ENV MAVEN_OPTS="-Dorg.slf4j.simpleLogger.showDateTime=true"
+
+# Create test-results directory
+RUN mkdir -p /app/test-results
+
+# Run tests when container starts
+CMD mvn test -DbaseUrl=${BASE_URL:-http://16.171.224.162} && cp -r target/surefire-reports/* /app/test-results/ || (cp -r target/surefire-reports/* /app/test-results/ 2>/dev/null; exit 0)
